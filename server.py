@@ -92,19 +92,32 @@ class UploadStatus:
 
 def get_graph_context(question: str, max_hops: int = 2) -> str:
     """Извлекает релевантный контекст из Neo4j для GraphRAG."""
-    # Извлекаем корни слов (первые 5-6 букв для слов длиннее 3 символов) для русской морфологии
+    # Корни слов для русской морфологии + числовые диапазоны
     keywords = [w[:5].lower() for w in re.split(r'\W+', question) if len(w) > 3]
+    
+    # Извлекаем числовые условия из вопроса (e.g. "< 200", "> 50", "300 мг/л")
+    num_conditions = []
+    for m in re.finditer(r'([<>]=?|около|не более|не менее|до|от)\s*(\d+(?:[.,]\d+)?)', question):
+        op_raw = m.group(1).strip()
+        val = float(m.group(2).replace(',', '.'))
+        op_map = {'<': '<', '<=': '<=', '>': '>', '>=': '>=', 'до': '<=', 'от': '>=', 'не более': '<=', 'не менее': '>='}
+        cypher_op = op_map.get(op_raw, None)
+        if cypher_op:
+            num_conditions.append(f"(n.value_num IS NOT NULL AND n.value_num {cypher_op} {val})")
 
     if not keywords:
         return ""
 
     # Строим скоринг: узел получает баллы за каждое найденное слово
     score_cases = " + ".join([f"(CASE WHEN toLower(n.name) CONTAINS '{kw}' THEN 1 ELSE 0 END)" for kw in keywords[:6]])
+    
+    # Дополнительный фильтр по числовым условиям
+    numeric_filter = " OR " + " OR ".join(num_conditions) if num_conditions else ""
 
     cypher = f"""
     MATCH (n)
     WITH n, ({score_cases}) AS score
-    WHERE score > 0
+    WHERE score > 0{numeric_filter}
     ORDER BY score DESC
     LIMIT 15
     CALL {{
@@ -113,7 +126,7 @@ def get_graph_context(question: str, max_hops: int = 2) -> str:
         RETURN related, relationships(path) as rels
         LIMIT 30
     }}
-    RETURN n.name as center, n.label as center_type,
+    RETURN n.name as center, n.label as center_type, n.geography as geo, n.year as yr, n.confidence as conf,
            related.name as related_name, related.label as related_type,
            [r in rels | type(r) + 
             CASE WHEN type(r)='MENTIONED_IN'
@@ -129,8 +142,13 @@ def get_graph_context(question: str, max_hops: int = 2) -> str:
     with neo4j_driver.session() as session:
         results = session.run(cypher)
         for record in results:
+            meta = []
+            if record.get('geo'): meta.append(f"🌍{record['geo']}")
+            if record.get('yr'): meta.append(f"📅{record['yr']}")
+            if record.get('conf'): meta.append(f"✓{record['conf']}")
+            meta_str = f" [{', '.join(meta)}]" if meta else ""
             context_parts.append(
-                f"{record['center']} ({record['center_type']}) "
+                f"{record['center']} ({record['center_type']}){meta_str} "
                 f"--[{' -> '.join(record['rel_types'])}]--> "
                 f"{record['related_name']} ({record['related_type']})"
             )
@@ -143,25 +161,34 @@ def extract_entities_with_llm(text: str) -> dict:
     prompt = f"""Ты — специализированный экспертный агент по извлечению онтологических знаний для металлургической отрасли (никель, медь, металлы платиновой группы).
 Проанализируй следующий текст и извлеки из него сущности и связи в виде JSON. Обрати внимание на маркеры страниц (например, --- [СТРАНИЦА 5] ---).
 
+Синоним-словарь для нормализации терминов (обязательно используй каноническое название, но не создавай дубли):
+- ПВП = Печь взвешенной плавки = Fluidized Bed Furnace = Взвешенная плавка
+- ЭЭ = Электроэкстракция = Electrowinning = Электроосаждение
+- АОВ = Автоклавное окислительное выщелачивание = POX = Pressure Oxidation
+- МПГ = Металлы платиновой группы = ПГМ = PGM = Platinum Group Metals
+- ЛДП = Линия двойного питания = Электролитная ванна
+
 Текст:
 {text[:5000]}
 
 СТРОГИЕ ПРАВИЛА ИЗВЛЕЧЕНИЯ:
-1. Числовые значения параметров (температуры, давления, концентрации, время, проценты извлечения металлов) — обязательно выноси как отдельные узлы Property с атрибутом value.
-   Пример: "temperature_120c" (name: "Температура 120°C", value: "120"), "recovery_98" (name: "Извлечение палладия 98%", value: "98").
+1. Числовые значения параметров (температуры, давления, концентрации, время, проценты извлечения металлов) — обязательно выноси как отдельные узлы Property с атрибутом value (числовое значение без единиц, только число) и value_unit (единица: мг/л, °C, г/л, %, т/сут, м³/ч).
+   Пример: {{"id": "conc_sulfate_250", "label": "Property", "name": "Концентрация сульфатов 250 мг/л", "value": 250, "value_unit": "мг/л"}}.
 2. Связывай свойства с соответствующими экспериментами, материалами или процессами с помощью связей (condition_of, describes).
-3. Противоречия в данных: если в тексте утверждается, что какой-то метод или параметр не работает, опровергает предыдущие данные или снижает показатели по сравнению с другими исследованиями (слова "однако", "в отличие от", "опровергает", "падает до"), обязательно создай связь CONTRADICTS между конфликтующими узлами. В свойствах связи укажи reason.
-4. Эксперты, авторы и публикации: связывай авторов с их публикациями (authored_by) и организациями (affiliated_with).
-5. ЦИТИРОВАНИЕ: Для КАЖДОГО узла постарайся найти точный номер страницы (где он был упомянут) и короткую цитату (до 100 символов), подтверждающую этот факт.
-6. ЕСЛИ В ТЕКСТЕ НЕТ ЭКСПЕРИМЕНТАЛЬНЫХ ДАННЫХ (например, это оглавление курса или общий доклад), ВСЕ РАВНО извлекай упоминаемые концепты (как Process или Material) и людей (как Expert). Граф никогда не должен быть пустым, если в тексте есть осмысленная информация.
+3. Противоречия в данных: если в тексте утверждается, что какой-то метод или параметр не работает, опровергает предыдущие данные или снижает показатели (слова "однако", "в отличие от", "опровергает", "падает до"), обязательно создай связь CONTRADICTS между конфликтующими узлами. В свойствах связи укажи reason.
+4. Эксперты, авторы и публикации: связывай авторов с их публикациями (authored_by) и организациями (affiliated_with). Для Publication указывай year (год публикации, число) и geography ("Россия" или "Зарубежье" или название страны).
+5. ЦИТИРОВАНИЕ: Для КАЖДОГО узла постарайся найти точный номер страницы (page) и короткую цитату (quote, до 100 символов), подтверждающую этот факт.
+6. ДОСТОВЕРНОСТЬ: Для каждого Experiment и Publication выставляй поле confidence: "high" (рецензируемая статья, диссертация, патент), "medium" (технический отчет, презентация), "low" (устное сообщение, не верифицировано).
+7. ГЕОГРАФИЯ: Для Process и Experiment, если в тексте упомянута страна или регион, добавляй поле geography: "Россия", "США", "Финляндия" и т.д. Если не упомянута — не добавляй.
+8. ЕСЛИ В ТЕКСТЕ НЕТ ЭКСПЕРИМЕНТАЛЬНЫХ ДАННЫХ (например, это оглавление или доклад), ВСЕ РАВНО извлекай концепты (Process, Material) и людей (Expert). Граф никогда не должен быть пустым при наличии осмысленного текста.
 
 Верни JSON строго следующей структуры:
 {{
   "nodes": [
-    {{"id": "уникальный_id", "label": "тип_узла", "name": "название", "value": "опциональное_значение", "page": 1, "quote": "точная цитата из текста"}}
+    {{"id": "уникальный_id", "label": "тип_узла", "name": "название", "value": 120, "value_unit": "°C", "page": 1, "quote": "цитата", "confidence": "high", "year": 2021, "geography": "Россия"}}
   ],
   "edges": [
-    {{"source": "id_источника", "target": "id_цели", "type": "тип_связи", "reason": "почему_противоречит_или_описание"}}
+    {{"source": "id_источника", "target": "id_цели", "type": "тип_связи", "reason": "описание"}}
   ]
 }}
 
@@ -174,7 +201,7 @@ def extract_entities_with_llm(text: str) -> dict:
         model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
-        max_tokens=2000
+        max_tokens=3000
     )
 
     raw = response.choices[0].message.content
@@ -191,14 +218,13 @@ def extract_entities_with_llm(text: str) -> dict:
 
 
 def merge_entities_to_neo4j(graph_data: dict, filename: str = None) -> dict:
-    """Сохраняет извлечённые сущности в Neo4j."""
+    """Сохраняет извлечённые сущности в Neo4j (с полями year, geography, confidence, value_num)."""
     nodes = graph_data.get("nodes", [])
     edges = graph_data.get("edges", [])
     created_nodes = []
     created_edges = []
 
     with neo4j_driver.session() as session:
-        # Создаем узел документа, если передано имя файла
         doc_id = None
         if filename:
             doc_id = f"doc_{filename.lower().replace(' ', '_')}"
@@ -214,23 +240,62 @@ def merge_entities_to_neo4j(graph_data: dict, filename: str = None) -> dict:
             if not node_id or not name:
                 continue
 
+            # Базовые поля — всегда
+            set_parts = ["n.name = $name", "n.label = $label"]
+            params: dict = {"id": node_id, "name": name, "label": label}
+
+            # value — строковое представление
+            if node.get("value") is not None:
+                set_parts.append("n.value = $value")
+                params["value"] = str(node["value"])
+
+            # value_num — числовое для Cypher-фильтрации
+            raw_val = node.get("value")
+            if raw_val is not None:
+                try:
+                    params["value_num"] = float(str(raw_val).replace(",", "."))
+                    set_parts.append("n.value_num = $value_num")
+                except (ValueError, TypeError):
+                    pass
+
+            # value_unit — единица измерения
+            if node.get("value_unit"):
+                set_parts.append("n.value_unit = $value_unit")
+                params["value_unit"] = str(node["value_unit"])
+
+            # confidence — high / medium / low
+            if node.get("confidence"):
+                set_parts.append("n.confidence = $confidence")
+                params["confidence"] = str(node["confidence"])
+
+            # year — год публикации / исследования
+            if node.get("year"):
+                try:
+                    set_parts.append("n.year = $year")
+                    params["year"] = int(node["year"])
+                except (ValueError, TypeError):
+                    pass
+
+            # geography — страна / регион
+            if node.get("geography"):
+                set_parts.append("n.geography = $geography")
+                params["geography"] = str(node["geography"])
+
             session.run(
-                f"MERGE (n:{label} {{id: $id}}) SET n.name = $name, n.label = $label",
-                {"id": node_id, "name": name, "label": label}
+                f"MERGE (n:{label} {{id: $id}}) SET {', '.join(set_parts)}",
+                params
             )
             created_nodes.append({"id": node_id, "label": label, "name": name})
 
-            # Связываем узел с документом
+            # Связываем с документом через MENTIONED_IN
             if doc_id:
                 page_num = node.get("page")
                 quote_text = str(node.get("quote", "")).replace('"', "'").strip()
-                
                 q = "MATCH (n {id: $node_id}), (d:Document {id: $doc_id}) MERGE (n)-[r:MENTIONED_IN]->(d) "
                 if page_num is not None:
                     q += f"SET r.page = {page_num} "
                 if quote_text:
                     q += "SET r.quote = $quote "
-                    
                 session.run(q, {"node_id": node_id, "doc_id": doc_id, "quote": quote_text})
 
         for edge in edges:
@@ -239,11 +304,17 @@ def merge_entities_to_neo4j(graph_data: dict, filename: str = None) -> dict:
             rel_type = edge.get("type", "RELATED").strip().upper().replace(" ", "_")
             if not src or not tgt:
                 continue
-
-            session.run(
-                f"MATCH (a {{id: $src}}), (b {{id: $tgt}}) MERGE (a)-[r:{rel_type}]->(b)",
-                {"src": src, "tgt": tgt}
-            )
+            reason = edge.get("reason", "")
+            if reason:
+                session.run(
+                    f"MATCH (a {{id: $src}}), (b {{id: $tgt}}) MERGE (a)-[r:{rel_type}]->(b) SET r.reason = $reason",
+                    {"src": src, "tgt": tgt, "reason": reason}
+                )
+            else:
+                session.run(
+                    f"MATCH (a {{id: $src}}), (b {{id: $tgt}}) MERGE (a)-[r:{rel_type}]->(b)",
+                    {"src": src, "tgt": tgt}
+                )
             created_edges.append({"source": src, "target": tgt, "type": rel_type})
 
     return {"nodes": created_nodes, "edges": created_edges}
@@ -379,6 +450,31 @@ async def query_graph(request: QueryRequest):
         "context_used": bool(context),
         "context_preview": context[:500] if context else None
     }
+
+
+class ExportRequest(BaseModel):
+    question: str
+    answer: str
+
+@app.post("/api/export")
+def export_answer(request: ExportRequest):
+    """Экспортирует Q&A ответ в Markdown-формате."""
+    import datetime
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    md = f"""# NornGraph — Экспорт ответа
+
+**Дата:** {ts}  
+**Вопрос:** {request.question}
+
+---
+
+{request.answer}
+
+---
+*Сгенерировано системой NornGraph · GraphRAG на базе Neo4j + DeepSeek*
+"""
+    return {"markdown": md, "filename": f"norngraph_export_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.md"}
+
 
 
 @app.post("/api/upload")

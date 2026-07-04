@@ -323,19 +323,47 @@ function clearChat() {
       <div class="welcome-icon">🔬</div>
       <div class="welcome-text">Задайте вопрос о металлургических процессах. Система проанализирует граф знаний и сформирует ответ.</div>
       <div class="example-questions">
-        <button class="example-btn" onclick="fillQuestion('Что делали по флотации медно-никелевых концентратов и какой был эффект?')">
-          Флотация медно-никелевых концентратов
+        <button class="example-btn" onclick="fillQuestion('Какие методы обессоливания воды подходят для горно-металлургической фабрики, если вода содержит сульфаты и хлориды?')">
+          Методы обессоливания воды
         </button>
-        <button class="example-btn" onclick="fillQuestion('Какое оборудование используется для выщелачивания никеля?')">
-          Оборудование для выщелачивания
+        <button class="example-btn" onclick="fillQuestion('Какие технические решения циркуляции католита при электроэкстракции никеля применялись в мировой практике?')">
+          Циркуляция католита (ЭЭ)
         </button>
-        <button class="example-btn" onclick="fillQuestion('Какие противоречия есть в данных по извлечению платиноидов?')">
+        <button class="example-btn" onclick="fillQuestion('Какие противоречия есть в данных по извлечению платиноидов между штейном и шлаком?')">
           Противоречия по платиноидам
         </button>
       </div>
     </div>
   `;
 }
+
+async function exportLastAnswer() {
+  const lastAssistant = [...chatHistory].reverse().find(m => m.role === 'assistant');
+  const lastUser = [...chatHistory].reverse().find(m => m.role === 'user');
+  if (!lastAssistant) {
+    alert('Нет ответа для копирования. Сначала задайте вопрос.');
+    return;
+  }
+  try {
+    const res = await fetch(`${API}/api/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: lastUser?.text || '', answer: lastAssistant.text })
+    });
+    const data = await res.json();
+    await navigator.clipboard.writeText(data.markdown);
+    const btn = document.getElementById('export-md-btn');
+    const orig = btn.textContent;
+    btn.textContent = '✅ Скопировано!';
+    btn.style.color = 'var(--green)';
+    setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 2000);
+  } catch(e) {
+    // Fallback — копируем напрямую
+    await navigator.clipboard.writeText(lastAssistant.text);
+    alert('Скопировано в буфер обмена (без форматирования).');
+  }
+}
+
 
 function restoreChat() {
   if (chatHistory.length > 0) {

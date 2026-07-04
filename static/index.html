@@ -102,7 +102,10 @@
         <div class="qa-header">
           <div class="qa-title-row" style="display: flex; justify-content: space-between; align-items: center;">
             <h2 class="panel-title">Интеллектуальный поиск (GraphRAG)</h2>
-            <button class="tool-btn" onclick="clearChat()">🧹 Очистить чат</button>
+            <div style="display:flex;gap:8px">
+              <button class="tool-btn" id="export-md-btn" onclick="exportLastAnswer()" title="Скопировать последний ответ как Markdown">📋 Копировать MD</button>
+              <button class="tool-btn" onclick="clearChat()">🧹 Очистить чат</button>
+            </div>
           </div>
           <p class="panel-desc">Задайте вопрос по металлургической базе знаний. Система извлечет релевантные цепочки связей из графа Neo4j и сформирует точный ответ с помощью LLM.</p>
         </div>
@@ -112,13 +115,13 @@
             <div class="welcome-icon">🔬</div>
             <div class="welcome-text">Задайте вопрос о металлургических процессах. Система проанализирует граф знаний и сформирует ответ.</div>
             <div class="example-questions">
-              <button class="example-btn" onclick="fillQuestion('Что делали по флотации медно-никелевых концентратов и какой был эффект?')">
-                Флотация медно-никелевых концентратов
+              <button class="example-btn" onclick="fillQuestion('Какие методы обессоливания воды подходят для горно-металлургической фабрики, если вода содержит сульфаты и хлориды?')">
+                Методы обессоливания воды
               </button>
-              <button class="example-btn" onclick="fillQuestion('Какое оборудование используется для выщелачивания никеля?')">
-                Оборудование для выщелачивания
+              <button class="example-btn" onclick="fillQuestion('Какие технические решения циркуляции католита при электроэкстракции никеля применялись в мировой практике?')">
+                Циркуляция католита (ЭЭ)
               </button>
-              <button class="example-btn" onclick="fillQuestion('Какие противоречия есть в данных по извлечению платиноидов?')">
+              <button class="example-btn" onclick="fillQuestion('Какие противоречия есть в данных по извлечению платиноидов между штейном и шлаком?')">
                 Противоречия по платиноидам
               </button>
             </div>
