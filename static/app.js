@@ -21,6 +21,7 @@ let network = null;
 let allNodes = [];
 let allEdges = [];
 let physicsEnabled = true;
+let nodesToFocusAfterStabilization = null; // nodes to focus once graph settles
 let chatHistory = JSON.parse(localStorage.getItem('norngraph_chat')) || [];
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -211,6 +212,7 @@ function focusSearchedNodes() {
 
 
 function renderGraph(nodes, edges) {
+  physicsEnabled = true; // Always start with physics enabled for layout spacing
   const container = document.getElementById('graph-container');
   const dataset = {
     nodes: new vis.DataSet(nodes),
@@ -220,7 +222,7 @@ function renderGraph(nodes, edges) {
 
   const options = {
     physics: {
-      enabled: physicsEnabled,
+      enabled: true,
       solver: 'barnesHut',
       barnesHut: { gravitationalConstant: -2500, centralGravity: 0.15, springLength: 130, springConstant: 0.03, damping: 0.12 },
       stabilization: { iterations: 150 }
@@ -258,15 +260,23 @@ function renderGraph(nodes, edges) {
     }
   });
 
-  // Подсветка новых узлов (если есть)
+  // Отключаем физику после стабилизации и плавно фокусируемся
   network.on('stabilizationIterationsDone', () => {
-    if (physicsEnabled) {
-      network.setOptions({ physics: { enabled: false } });
-      physicsEnabled = false;
+    network.setOptions({ physics: { enabled: false } });
+    physicsEnabled = false;
+
+    if (nodesToFocusAfterStabilization && nodesToFocusAfterStabilization.length > 0) {
+      // Подсвечиваем и фокусируемся на новых узлах
+      network.selectNodes(nodesToFocusAfterStabilization);
+      network.fit({
+        nodes: nodesToFocusAfterStabilization,
+        animation: { duration: 1000, easingFunction: 'easeInOutQuad' }
+      });
+      nodesToFocusAfterStabilization = null; // сбрасываем состояние
+    } else {
       network.fit();
     }
   });
-
 }
 
 function highlightNodes(selectedNodeIds, dataset) {
@@ -897,14 +907,8 @@ async function uploadFiles(files) {
 
   if (allNewNodes.length > 0) {
     const newIds = allNewNodes.map(n => n.id);
+    nodesToFocusAfterStabilization = newIds;
     switchPanel('graph');
-    setTimeout(() => {
-      network.selectNodes(newIds);
-      network.fit({
-        nodes: newIds,
-        animation: { duration: 1000, easingFunction: 'easeInOutQuad' }
-      });
-    }, 500);
   }
 }
 
@@ -982,14 +986,8 @@ async function uploadByUrl() {
 
     if (status && status.new_nodes && status.new_nodes.length > 0) {
       const newIds = status.new_nodes.map(n => n.id);
+      nodesToFocusAfterStabilization = newIds;
       switchPanel('graph');
-      setTimeout(() => {
-        network.selectNodes(newIds);
-        network.fit({
-          nodes: newIds,
-          animation: { duration: 1000, easingFunction: 'easeInOutQuad' }
-        });
-      }, 500);
     }
   } catch (e) {
     statusText.textContent = `❌ Ошибка при загрузке по ссылке: ${e.message}`;

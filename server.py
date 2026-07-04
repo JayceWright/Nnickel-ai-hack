@@ -169,7 +169,7 @@ def extract_entities_with_llm(text: str) -> dict:
 - ЛДП = Линия двойного питания = Электролитная ванна
 
 Текст:
-{text[:5000]}
+{text}
 
 СТРОГИЕ ПРАВИЛА ИЗВЛЕЧЕНИЯ:
 1. Числовые значения параметров (температуры, давления, концентрации, время, проценты извлечения металлов) — обязательно выноси как отдельные узлы Property с атрибутом value (числовое значение без единиц, только число) и value_unit (единица: мг/л, °C, г/л, %, т/сут, м³/ч).
@@ -215,6 +215,71 @@ def extract_entities_with_llm(text: str) -> dict:
         return json.loads(json_match.group(0))
     except json.JSONDecodeError:
         return {"nodes": [], "edges": []}
+
+
+def extract_entities_from_large_text(text: str) -> dict:
+    """Разбивает большой текст на перекрывающиеся чанки и извлекает сущности из каждого чанка, объединяя результаты."""
+    # Если текст короткий, обрабатываем целиком
+    if len(text) <= 12000:
+        return extract_entities_with_llm(text)
+        
+    chunk_size = 10000
+    overlap = 1500
+    
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        # Стараемся резать по концам абзацев, если возможно
+        if end < len(text):
+            next_newline = text.find("\n", end - 500, end + 500)
+            if next_newline != -1:
+                end = next_newline
+        chunks.append(text[start:end])
+        if end >= len(text):
+            break
+        start = end - overlap
+
+    print(f"🧩 Разделение текста на {len(chunks)} частей для анализа LLM...")
+    
+    all_nodes = {}
+    all_edges = []
+    seen_edges = set()
+
+    for idx, chunk in enumerate(chunks):
+        print(f"🧠 [Chunk {idx+1}/{len(chunks)}] Извлечение онтологии из {len(chunk)} символов...")
+        chunk_data = extract_entities_with_llm(chunk)
+        
+        # Слияние узлов
+        for node in chunk_data.get("nodes", []):
+            node_id = str(node.get("id", "")).strip()
+            if not node_id:
+                continue
+            if node_id not in all_nodes:
+                all_nodes[node_id] = node
+            else:
+                # Дополняем свойства, если в других чанках их не было
+                existing = all_nodes[node_id]
+                for key in ["value", "value_unit", "confidence", "year", "geography", "page", "quote"]:
+                    if node.get(key) is not None and existing.get(key) is None:
+                        existing[key] = node[key]
+
+        # Слияние ребер
+        for edge in chunk_data.get("edges", []):
+            src = str(edge.get("source", "")).strip()
+            tgt = str(edge.get("target", "")).strip()
+            rel_type = edge.get("type", "RELATED").strip().upper().replace(" ", "_")
+            if not src or not tgt:
+                continue
+            edge_key = (src, tgt, rel_type)
+            if edge_key not in seen_edges:
+                seen_edges.add(edge_key)
+                all_edges.append(edge)
+
+    return {
+        "nodes": list(all_nodes.values()),
+        "edges": all_edges
+    }
 
 
 def merge_entities_to_neo4j(graph_data: dict, filename: str = None) -> dict:
@@ -764,7 +829,7 @@ async def process_document_background(job_id: str, file_path: str, filename: str
         with open("pdf_text_debug.txt", "w", encoding="utf-8") as f:
             f.write(text)
         # 2. Извлекаем онтологию
-        graph_data = extract_entities_with_llm(text)
+        graph_data = extract_entities_from_large_text(text)
         
         print(f"💾 [Job: {job_id}] Сохранение графа в Neo4j...")
         # 3. Сохраняем в Neo4j
