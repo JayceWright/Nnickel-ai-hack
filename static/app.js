@@ -72,6 +72,7 @@ async function loadGraph() {
       name: n.label || '', // original untruncated name
       title: n.title || n.label,
       group: n.group,
+      properties: n.properties || {}, // raw properties dictionary from Neo4j
       color: NODE_COLORS[n.group] || DEFAULT_COLOR,
       font: { color: '#ffffff', size: 12, face: 'Inter', strokeWidth: 3, strokeColor: 'rgba(5, 8, 18, 0.8)' },
       size: getNodeSize(n.group),
@@ -338,10 +339,177 @@ function showNodeDetail(node) {
   const panel = document.getElementById('node-detail');
   const content = document.getElementById('node-detail-content');
   panel.style.display = 'block';
+
+  const props = node.properties || {};
+  const value = props.value || '';
+  const unit = props.value_unit || '';
+  const year = props.year || '';
+  const geo = props.geography || '';
+  const conf = props.confidence || '';
+
   content.innerHTML = `
-    <div class="detail-type">${node.group}</div>
-    <div class="detail-name">${node.title || node.label}</div>
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <div class="detail-row">
+        <span class="detail-label">Тип узла:</span>
+        <span class="node-type-pill" style="border-left: 3px solid ${NODE_COLORS[node.group]?.border || '#fff'}; padding-left: 6px; font-weight: 600; color: ${NODE_COLORS[node.group]?.border || '#fff'}">${node.group}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">ID:</span>
+        <span class="detail-value" style="font-family:monospace; font-size:11px; background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:3px; word-break:break-all;">${node.id}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Название:</span>
+        <div style="font-size:13px; font-weight:500; margin-top:3px; line-height:1.4; color:#fff;">${node.name}</div>
+      </div>
+      
+      ${value ? `
+        <div class="detail-row">
+          <span class="detail-label">Значение:</span>
+          <span class="detail-value" style="font-weight:600; color:#00e5ff">${value} ${unit}</span>
+        </div>
+      ` : ''}
+
+      ${year ? `
+        <div class="detail-row">
+          <span class="detail-label">Год:</span>
+          <span class="detail-value" style="color:#fbbf24">📅 ${year}</span>
+        </div>
+      ` : ''}
+
+      ${geo ? `
+        <div class="detail-row">
+          <span class="detail-label">География:</span>
+          <span class="detail-value" style="color:#34d399">🌍 ${geo}</span>
+        </div>
+      ` : ''}
+
+      ${conf ? `
+        <div class="detail-row">
+          <span class="detail-label">Достоверность:</span>
+          <span class="detail-value status-tag ${conf}">${conf}</span>
+        </div>
+      ` : ''}
+
+      <div class="detail-actions" style="margin-top: 12px; display: flex; gap: 8px;">
+        <button class="tool-btn" onclick="startEditNode('${node.id}')" style="flex:1; justify-content:center; font-size:12px; padding:6px;">✏️ Правка</button>
+        <button class="tool-btn" onclick="deleteNodeConfirm('${node.id}')" style="flex:1; justify-content:center; font-size:12px; padding:6px; background:rgba(239, 68, 68, 0.15); border-color:rgba(239, 68, 68, 0.3); color:#f87171;">❌ Удалить</button>
+      </div>
+    </div>
   `;
+}
+
+function startEditNode(nodeId) {
+  const node = allNodes.find(n => n.id === nodeId);
+  if (!node) return;
+
+  const content = document.getElementById('node-detail-content');
+  const props = node.properties || {};
+
+  content.innerHTML = `
+    <div class="detail-edit-form" style="display:flex; flex-direction:column; gap:10px; margin-top: 4px;">
+      <div class="form-group">
+        <label style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom:4px;">Название:</label>
+        <input type="text" id="edit-node-name" class="chat-input" value="${node.name.replace(/"/g, '&quot;')}" style="width:100%; box-sizing:border-box; height:32px; padding:4px 8px;" />
+      </div>
+
+      <div style="display:flex; gap:8px;">
+        <div class="form-group" style="flex:1">
+          <label style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom:4px;">Значение:</label>
+          <input type="text" id="edit-node-value" class="chat-input" value="${props.value || ''}" style="width:100%; box-sizing:border-box; height:32px; padding:4px 8px;" />
+        </div>
+        <div class="form-group" style="flex:1">
+          <label style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom:4px;">Ед. изм.:</label>
+          <input type="text" id="edit-node-unit" class="chat-input" value="${props.value_unit || ''}" style="width:100%; box-sizing:border-box; height:32px; padding:4px 8px;" />
+        </div>
+      </div>
+
+      <div style="display:flex; gap:8px;">
+        <div class="form-group" style="flex:1">
+          <label style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom:4px;">Год:</label>
+          <input type="number" id="edit-node-year" class="chat-input" value="${props.year || ''}" style="width:100%; box-sizing:border-box; height:32px; padding:4px 8px;" />
+        </div>
+        <div class="form-group" style="flex:1">
+          <label style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom:4px;">География:</label>
+          <input type="text" id="edit-node-geo" class="chat-input" value="${props.geography || ''}" style="width:100%; box-sizing:border-box; height:32px; padding:4px 8px;" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom:4px;">Достоверность:</label>
+        <select id="edit-node-conf" class="chat-input" style="width:100%; box-sizing:border-box; height:32px; padding:4px 8px; background:rgba(15, 23, 42, 0.9); color:#fff; border:1px solid rgba(255,255,255,0.18);">
+          <option value="" ${!props.confidence ? 'selected' : ''}>-- нет --</option>
+          <option value="high" ${props.confidence === 'high' ? 'selected' : ''}>high (высокая)</option>
+          <option value="medium" ${props.confidence === 'medium' ? 'selected' : ''}>medium (средняя)</option>
+          <option value="low" ${props.confidence === 'low' ? 'selected' : ''}>low (низкая)</option>
+        </select>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <button class="tool-btn" onclick="saveNodeEdit('${node.id}')" style="flex:1; justify-content:center; background:var(--accent); color:#fff;">💾 Сохранить</button>
+        <button class="tool-btn" onclick="showNodeDetail(allNodes.find(n => n.id === '${node.id}'))" style="flex:1; justify-content:center;">❌ Отмена</button>
+      </div>
+    </div>
+  `;
+}
+
+async function saveNodeEdit(nodeId) {
+  const name = document.getElementById('edit-node-name').value.trim();
+  const value = document.getElementById('edit-node-value').value.trim() || null;
+  const value_unit = document.getElementById('edit-node-unit').value.trim() || null;
+  const yearRaw = document.getElementById('edit-node-year').value;
+  const year = yearRaw ? parseInt(yearRaw) : null;
+  const geography = document.getElementById('edit-node-geo').value.trim() || null;
+  const confidence = document.getElementById('edit-node-conf').value || null;
+
+  if (!name) {
+    alert('Название не может быть пустым');
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/node/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: nodeId, name, value, value_unit, year, geography, confidence })
+    });
+
+    if (res.ok) {
+      await loadGraph();
+      await loadStats();
+      const updatedNode = allNodes.find(n => n.id === nodeId);
+      if (updatedNode) {
+        showNodeDetail(updatedNode);
+      } else {
+        hideNodeDetail();
+      }
+    } else {
+      const err = await res.json();
+      alert('Ошибка: ' + (err.detail || 'Неизвестная ошибка'));
+    }
+  } catch(e) {
+    alert('Ошибка соединения при сохранении изменений');
+  }
+}
+
+async function deleteNodeConfirm(nodeId) {
+  if (!confirm(`Вы действительно хотите удалить узел "${nodeId}" и все его связи?`)) {
+    return;
+  }
+  try {
+    const res = await fetch(`${API}/api/node/${nodeId}`, {
+      method: 'DELETE'
+    });
+    if (res.ok) {
+      hideNodeDetail();
+      await loadGraph();
+      await loadStats();
+    } else {
+      const err = await res.json();
+      alert('Ошибка при удалении: ' + (err.detail || 'Неизвестная ошибка'));
+    }
+  } catch(e) {
+    alert('Ошибка сети при удалении');
+  }
 }
 
 function hideNodeDetail() {

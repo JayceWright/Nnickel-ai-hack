@@ -355,28 +355,45 @@ def get_stats():
 
 @app.get("/api/graph")
 def get_graph(limit: int = 500):
-    """Выгружает граф в формате для vis-network.js."""
+    """Выгружает граф в формате для vis-network.js с полной информацией об атрибутах."""
     nodes_map = {}
     edges_list = []
 
     with neo4j_driver.session() as session:
-        # Получаем все узлы, кроме Document (они только для RAG, не для визуализации)
+        # Получаем все узлы, кроме Document
         all_nodes = session.run(
             "MATCH (n) WHERE NOT n:Document "
-            "RETURN properties(n).id as id, n.label as label, n.name as name, n.value as value LIMIT $limit",
+            "RETURN properties(n) as props, labels(n)[0] as label LIMIT $limit",
             {"limit": limit}
         )
         for record in all_nodes:
-            node_id = record["id"]
+            props = record["props"]
+            node_id = props.get("id")
             if node_id:
+                group = record["label"] or "Unknown"
+                name = props.get("name") or node_id
+                
+                # Создаем информативный тултип (title)
+                tooltip = f"Тип: {group}\nИмя: {name}"
+                if props.get("value"):
+                    unit = props.get("value_unit") or ""
+                    tooltip += f"\nЗначение: {props['value']} {unit}".strip()
+                if props.get("year"):
+                    tooltip += f"\nГод: {props['year']}"
+                if props.get("geography"):
+                    tooltip += f"\nГеография: {props['geography']}"
+                if props.get("confidence"):
+                    tooltip += f"\nДостоверность: {props['confidence']}"
+
                 nodes_map[node_id] = {
                     "id": node_id,
-                    "label": record["name"] or node_id,
-                    "group": record["label"] or "Unknown",
-                    "title": f"{record['label']}: {record['name']}" + (f"\nValue: {record['value']}" if record["value"] else "")
+                    "label": name,
+                    "group": group,
+                    "title": tooltip,
+                    "properties": props
                 }
 
-        # Получаем рёбра, исключая MENTIONED_IN (они скрытые, только для RAG)
+        # Получаем рёбра, исключая MENTIONED_IN
         all_edges = session.run(
             "MATCH (a)-[r]->(b) "
             "WHERE properties(a).id IS NOT NULL AND properties(b).id IS NOT NULL "
@@ -400,6 +417,88 @@ def get_graph(limit: int = 500):
         "nodes": list(nodes_map.values()),
         "edges": edges_list
     }
+
+
+class UpdateNodeRequest(BaseModel):
+    id: str
+    name: str
+    value: Optional[str] = None
+    value_unit: Optional[str] = None
+    year: Optional[int] = None
+    geography: Optional[str] = None
+    confidence: Optional[str] = None
+
+@app.post("/api/node/update")
+def update_node(request: UpdateNodeRequest):
+    """Обновляет атрибуты узла в Neo4j."""
+    with neo4j_driver.session() as session:
+        # Получаем ярлык узла для безопасного MERGE/SET
+        res = session.run("MATCH (n {id: $id}) RETURN labels(n)[0] as label", {"id": request.id})
+        record = res.single()
+        if not record:
+            raise HTTPException(status_code=404, detail="Узел не найден")
+        
+        label = record["label"]
+        set_parts = ["n.name = $name"]
+        params = {"id": request.id, "name": request.name}
+
+        if request.value is not None:
+            set_parts.append("n.value = $value")
+            params["value"] = request.value
+            try:
+                params["value_num"] = float(str(request.value).replace(",", "."))
+                set_parts.append("n.value_num = $value_num")
+            except (ValueError, TypeError):
+                # Если не число, удаляем value_num
+                set_parts.append("n.value_num = null")
+        else:
+            set_parts.append("n.value = null")
+            set_parts.append("n.value_num = null")
+
+        if request.value_unit is not None:
+            set_parts.append("n.value_unit = $value_unit")
+            params["value_unit"] = request.value_unit
+        else:
+            set_parts.append("n.value_unit = null")
+
+        if request.year is not None:
+            set_parts.append("n.year = $year")
+            params["year"] = request.year
+        else:
+            set_parts.append("n.year = null")
+
+        if request.geography is not None:
+            set_parts.append("n.geography = $geography")
+            params["geography"] = request.geography
+        else:
+            set_parts.append("n.geography = null")
+
+        if request.confidence is not None:
+            set_parts.append("n.confidence = $confidence")
+            params["confidence"] = request.confidence
+        else:
+            set_parts.append("n.confidence = null")
+
+        session.run(
+            f"MATCH (n:{label} {{id: $id}}) SET {', '.join(set_parts)}",
+            params
+        )
+    return {"status": "ok"}
+
+
+@app.delete("/api/node/{node_id}")
+def delete_node(node_id: str):
+    """Удаляет узел и все его связи из Neo4j."""
+    with neo4j_driver.session() as session:
+        # Проверяем наличие
+        res = session.run("MATCH (n {id: $id}) RETURN count(n) as cnt", {"id": node_id})
+        if res.single()["cnt"] == 0:
+            raise HTTPException(status_code=404, detail="Узел не найден")
+        
+        # DETACH DELETE удаляет узел и все связанные рёбра
+        session.run("MATCH (n {id: $id}) DETACH DELETE n", {"id": node_id})
+    return {"status": "ok"}
+
 
 
 @app.post("/api/query")
