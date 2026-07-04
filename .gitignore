@@ -39,3 +39,11 @@ ENV/
 !README.md
 data/docs/*
 !data/docs/test_*.txt
+
+# Debug и временные артефакты
+llm_debug_output.txt
+pdf_text_debug.txt
+*_debug_*.txt
+
+# Архивы для жюри (не в репо, слишком большие)
+NornGraph_Hackathon_Submission_*.zip
