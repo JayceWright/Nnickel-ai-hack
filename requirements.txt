@@ -8,3 +8,4 @@ python-dotenv
 python-docx
 pymupdf
 pymupdf4llm
+requests
