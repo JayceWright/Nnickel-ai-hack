@@ -69,6 +69,7 @@ async function loadGraph() {
     allNodes = data.nodes.map(n => ({
       id: n.id,
       label: truncate(n.label, 22),
+      name: n.label || '', // original untruncated name
       title: n.title || n.label,
       group: n.group,
       color: NODE_COLORS[n.group] || DEFAULT_COLOR,
@@ -141,7 +142,7 @@ function searchNodes() {
   }
 
   const foundIds = allNodes
-    .filter(n => (n.label && n.label.toLowerCase().includes(query)) || (n.title && n.title.toLowerCase().includes(query)))
+    .filter(n => n.name && n.name.toLowerCase().includes(query))
     .map(n => n.id);
 
   if (foundIds.length > 0) {
@@ -194,12 +195,15 @@ function focusSearchedNodes() {
   if (!query || !network) return;
 
   const foundIds = allNodes
-    .filter(n => (n.label && n.label.toLowerCase().includes(query)) || (n.title && n.title.toLowerCase().includes(query)))
+    .filter(n => n.name && n.name.toLowerCase().includes(query))
     .map(n => n.id);
 
   if (foundIds.length > 0) {
     switchPanel('graph');
-    network.fit({ nodes: foundIds, animation: { duration: 600, easingFunction: 'easeInOutQuad' } });
+    network.selectNodes(foundIds);
+    setTimeout(() => {
+      network.fit({ nodes: foundIds, animation: { duration: 600, easingFunction: 'easeInOutQuad' } });
+    }, 80);
   }
 }
 
@@ -269,19 +273,41 @@ function highlightNodes(selectedNodeIds, dataset) {
   const connectedNodes = network.getConnectedNodes(selectedNodeId);
   const connectedEdges = network.getConnectedEdges(selectedNodeId);
   
-  const allNodesUpdate = dataset.nodes.get().map(node => {
-    if (node.id === selectedNodeId || connectedNodes.includes(node.id)) {
-      return { id: node.id, color: { opacity: 1 }, font: { color: '#ffffff' } };
+  const allNodesUpdate = allNodes.map(node => {
+    const isSelected = node.id === selectedNodeId;
+    const isConnected = connectedNodes.includes(node.id);
+    if (isSelected || isConnected) {
+      return { 
+        id: node.id, 
+        color: node.color, 
+        borderWidth: isSelected ? 3 : 1.5,
+        font: { color: '#ffffff', size: 12, face: 'Inter', strokeWidth: 3, strokeColor: 'rgba(5, 8, 18, 0.8)' },
+        shadow: isSelected ? { enabled: true, color: node.color.border || '#00e5ff', size: 15, x: 0, y: 0 } : false
+      };
     } else {
-      return { id: node.id, color: { opacity: 0.1 }, font: { color: 'rgba(255,255,255,0.1)' } };
+      return { 
+        id: node.id, 
+        color: { ...node.color, opacity: 0.1 }, 
+        borderWidth: 1.5,
+        font: { color: 'rgba(255,255,255,0.1)', size: 12, face: 'Inter', strokeWidth: 3, strokeColor: 'rgba(5, 8, 18, 0.1)' },
+        shadow: false
+      };
     }
   });
 
-  const allEdgesUpdate = dataset.edges.get().map(edge => {
+  const allEdgesUpdate = allEdges.map(edge => {
     if (connectedEdges.includes(edge.id)) {
-      return { id: edge.id, color: { opacity: 1 }, font: { color: edge.font ? edge.font.color : '#94a3b8' } };
+      return { 
+        id: edge.id, 
+        color: { ...edge.color, opacity: 1 }, 
+        font: { color: edge.label === 'contradicts' ? '#ff8a9f' : '#94a3b8', size: 10 } 
+      };
     } else {
-      return { id: edge.id, color: { opacity: 0.05 }, font: { color: 'rgba(255,255,255,0)' } };
+      return { 
+        id: edge.id, 
+        color: { ...edge.color, opacity: 0.05 }, 
+        font: { color: 'rgba(255,255,255,0)' } 
+      };
     }
   });
 
@@ -290,16 +316,18 @@ function highlightNodes(selectedNodeIds, dataset) {
 }
 
 function resetHighlight(dataset) {
-  const allNodesUpdate = dataset.nodes.get().map(node => ({
+  const allNodesUpdate = allNodes.map(node => ({
     id: node.id, 
-    color: { opacity: 1 },
-    font: { color: '#ffffff' }
+    color: node.color,
+    borderWidth: 1.5,
+    font: { color: '#ffffff', size: 12, face: 'Inter', strokeWidth: 3, strokeColor: 'rgba(5, 8, 18, 0.8)' },
+    shadow: false
   }));
   
-  const allEdgesUpdate = dataset.edges.get().map(edge => ({
+  const allEdgesUpdate = allEdges.map(edge => ({
     id: edge.id, 
-    color: { opacity: 0.8 },
-    font: { color: edge.label === 'contradicts' ? '#ff8a9f' : '#94a3b8' }
+    color: edge.color,
+    font: { color: edge.label === 'contradicts' ? '#ff8a9f' : '#94a3b8', size: 10 }
   }));
 
   dataset.nodes.update(allNodesUpdate);
@@ -354,7 +382,10 @@ function switchPanel(name) {
     setTimeout(() => {
       network.setSize('100%', '100%');
       network.redraw();
-      network.fit();
+      const selected = network.getSelectedNodes();
+      if (selected.length === 0) {
+        network.fit();
+      }
     }, 50);
   }
 
