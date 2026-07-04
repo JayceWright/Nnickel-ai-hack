@@ -1,21 +1,20 @@
 // ─── Config ───────────────────────────────────────────────────────────────────
 const API = '';  // пустой = тот же сервер
 
-// Цвета по типу узла
+// Цвета по типу узла (Glassmorphism & Neon)
 const NODE_COLORS = {
-  Material:     { background: '#1e40af', border: '#60a5fa', highlight: { background: '#2563eb', border: '#93c5fd' } },
-  Process:      { background: '#047857', border: '#34d399', highlight: { background: '#059669', border: '#6ee7b7' } },
-  Experiment:   { background: '#b45309', border: '#f59e0b', highlight: { background: '#d97706', border: '#fbbf24' } },
-  Equipment:    { background: '#5b21b6', border: '#a78bfa', highlight: { background: '#6d28d9', border: '#c4b5fd' } },
-  Property:     { background: '#991b1b', border: '#f87171', highlight: { background: '#b91c1c', border: '#fca5a5' } },
-  Expert:       { background: '#9a3412', border: '#fb923c', highlight: { background: '#c2410c', border: '#fdba74' } },
-  Publication:  { background: '#334155', border: '#94a3b8', highlight: { background: '#475569', border: '#cbd5e1' } },
-  Organization: { background: '#0f172a', border: '#7dd3fc', highlight: { background: '#1e293b', border: '#bae6fd' } },
-  Condition:    { background: '#312e81', border: '#818cf8', highlight: { background: '#3730a3', border: '#a5b4fc' } },
+  Material:     { background: 'rgba(59, 130, 246, 0.2)', border: '#00e5ff', highlight: { background: 'rgba(59, 130, 246, 0.4)', border: '#00ffff' } },
+  Process:      { background: 'rgba(16, 185, 129, 0.2)', border: '#00ff9d', highlight: { background: 'rgba(16, 185, 129, 0.4)', border: '#6ee7b7' } },
+  Experiment:   { background: 'rgba(245, 158, 11, 0.2)', border: '#f59e0b', highlight: { background: 'rgba(245, 158, 11, 0.4)', border: '#fbbf24' } },
+  Equipment:    { background: 'rgba(139, 92, 246, 0.2)', border: '#a78bfa', highlight: { background: 'rgba(139, 92, 246, 0.4)', border: '#c4b5fd' } },
+  Property:     { background: 'rgba(239, 68, 68, 0.2)',  border: '#ff2a5f', highlight: { background: 'rgba(239, 68, 68, 0.4)',  border: '#ff8a9f' } },
+  Expert:       { background: 'rgba(249, 115, 22, 0.2)', border: '#fb923c', highlight: { background: 'rgba(249, 115, 22, 0.4)', border: '#fdba74' } },
+  Publication:  { background: 'rgba(148, 163, 184, 0.2)',border: '#94a3b8', highlight: { background: 'rgba(148, 163, 184, 0.4)',border: '#cbd5e1' } },
+  Organization: { background: 'rgba(56, 189, 248, 0.2)', border: '#7dd3fc', highlight: { background: 'rgba(56, 189, 248, 0.4)', border: '#bae6fd' } },
+  Condition:    { background: 'rgba(129, 140, 248, 0.2)',border: '#818cf8', highlight: { background: 'rgba(129, 140, 248, 0.4)',border: '#a5b4fc' } },
 };
 
-
-const DEFAULT_COLOR = { background: '#1a2236', border: '#3b82f6', highlight: { background: '#1e2a40', border: '#60a5fa' } };
+const DEFAULT_COLOR = { background: 'rgba(255, 255, 255, 0.1)', border: '#00e5ff', highlight: { background: 'rgba(255, 255, 255, 0.2)', border: '#00ffff' } };
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let network = null;
@@ -79,18 +78,22 @@ async function loadGraph() {
       shape: getNodeShape(n.group),
     }));
 
-    allEdges = data.edges.map((e, i) => ({
-      id: i,
-      from: e.from,
-      to: e.to,
-      label: e.label,
-      title: e.title || e.label,
-      color: e.color || { color: '#2a3f5f', highlight: '#3b82f6' },
-      dashes: e.dashes || false,
-      arrows: 'to',
-      font: { color: '#4a6080', size: 9, align: 'middle' },
-      width: e.label === 'contradicts' ? 2 : 1,
-    }));
+    allEdges = data.edges.map((e, i) => {
+      const isContradict = e.label === 'contradicts';
+      return {
+        id: i,
+        from: e.from,
+        to: e.to,
+        label: e.label,
+        title: e.title || e.label,
+        color: isContradict ? { color: '#ff2a5f', highlight: '#ff8a9f' } : { color: 'rgba(255, 255, 255, 0.15)', highlight: '#00e5ff' },
+        dashes: isContradict ? [5, 5] : false,
+        arrows: 'to',
+        font: { color: isContradict ? '#ff8a9f' : '#94a3b8', size: 9, align: 'middle', strokeWidth: 0 },
+        width: isContradict ? 2 : 1,
+        shadow: isContradict ? { enabled: true, color: 'rgba(255, 42, 95, 0.5)', size: 10, x: 0, y: 0 } : false
+      };
+    });
 
     renderGraph(allNodes, allEdges);
   } catch (e) {
