@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+pydantic
+openai
+neo4j
+python-dotenv
+PyPDF2
+pymupdf
+pymupdf4llm
+easyocr
+ftfy
+json-repair

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NornGraph — База знаний по металлургии</title>
+  <meta name="description" content="Интерактивная система знаний по металлургии никеля и меди на основе GraphRAG" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css?v=10" />
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-brand">
+      <div class="brand-icon">⬡</div>
+      <div>
+        <div class="brand-name">NornGraph</div>
+        <div class="brand-sub">База знаний по металлургии</div>
+      </div>
+    </div>
+    <div class="header-stats" id="header-stats">
+      <div class="stat-pill" id="stat-nodes">— узлов</div>
+      <div class="stat-pill" id="stat-edges">— связей</div>
+      <div class="stat-pill contradictions" id="stat-contradictions">— противоречий</div>
+    </div>
+    <div class="status-dot" id="status-dot" title="Статус подключения"></div>
+  </header>
+
+  <!-- Main Layout -->
+  <div class="main-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <!-- Navigation -->
+      <nav class="nav">
+        <button class="nav-btn active" data-panel="graph" onclick="switchPanel('graph')">
+          <span class="nav-icon">🕸</span> Граф знаний
+        </button>
+        <button class="nav-btn" data-panel="qa" onclick="switchPanel('qa')">
+          <span class="nav-icon">💬</span> Вопрос-ответ
+        </button>
+        <button class="nav-btn" data-panel="analytics" onclick="switchPanel('analytics')">
+          <span class="nav-icon">⚡</span> Аналитика
+        </button>
+        <button class="nav-btn" data-panel="upload" onclick="switchPanel('upload')">
+          <span class="nav-icon">📄</span> Добавить знания
+        </button>
+      </nav>
+
+      <!-- Node Detail Panel -->
+      <div class="node-detail" id="node-detail" style="display:none">
+        <div class="node-detail-title">Выбранный узел</div>
+        <div id="node-detail-content"></div>
+      </div>
+
+      <!-- Legend -->
+      <div class="legend">
+        <div class="legend-title">Легенда</div>
+        <div class="legend-item"><span class="dot" style="background:#60a5fa"></span> Материал</div>
+        <div class="legend-item"><span class="dot" style="background:#34d399"></span> Процесс</div>
+        <div class="legend-item"><span class="dot" style="background:#f59e0b"></span> Эксперимент</div>
+        <div class="legend-item"><span class="dot" style="background:#a78bfa"></span> Оборудование</div>
+        <div class="legend-item"><span class="dot" style="background:#f87171"></span> Свойство</div>
+        <div class="legend-item"><span class="dot" style="background:#fb923c"></span> Эксперт</div>
+        <div class="legend-item"><span class="dot" style="background:#e2e8f0"></span> Публикация</div>
+        <div class="legend-item"><span class="dot" style="background:#ff4444; border-radius:2px"></span> Противоречие</div>
+      </div>
+    </aside>
+
+    <!-- Content Area -->
+    <main class="content">
+      <!-- Graph Panel -->
+      <div class="panel active" id="panel-graph">
+        <div class="graph-toolbar">
+          <button class="tool-btn" onclick="loadGraph()">↺ Обновить</button>
+          <button class="tool-btn" onclick="fitGraph()">⊡ Вписать</button>
+          <button class="tool-btn" onclick="togglePhysics()">⚙ Физика</button>
+          <div class="filter-group">
+            <select id="filter-type" onchange="filterGraph()" class="filter-select">
+              <option value="">Все типы</option>
+              <option value="Material">Материалы</option>
+              <option value="Process">Процессы</option>
+              <option value="Experiment">Эксперименты</option>
+              <option value="Equipment">Оборудование</option>
+              <option value="Property">Свойства</option>
+              <option value="Expert">Эксперты</option>
+              <option value="Publication">Публикации</option>
+            </select>
+          </div>
+          <div class="search-group">
+            <input type="text" id="node-search" class="search-input" placeholder="Поиск узла..." oninput="searchNodes()" onkeydown="if(event.key==='Enter') focusSearchedNodes()" />
+          </div>
+        </div>
+        <div id="graph-container"></div>
+        <div class="graph-hint">Нажмите на узел для деталей • Scroll для масштаба • Перетащите для перемещения</div>
+      </div>
+
+      <!-- Q&A Panel -->
+      <div class="panel" id="panel-qa">
+        <div class="qa-header">
+          <div class="qa-title-row" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 class="panel-title">Интеллектуальный поиск (GraphRAG)</h2>
+            <button class="tool-btn" onclick="clearChat()">🧹 Очистить чат</button>
+          </div>
+          <p class="panel-desc">Задайте вопрос по металлургической базе знаний. Система извлечет релевантные цепочки связей из графа Neo4j и сформирует точный ответ с помощью LLM.</p>
+        </div>
+
+        <div class="chat-container" id="chat-messages">
+          <div class="chat-welcome">
+            <div class="welcome-icon">🔬</div>
+            <div class="welcome-text">Задайте вопрос о металлургических процессах. Система проанализирует граф знаний и сформирует ответ.</div>
+            <div class="example-questions">
+              <button class="example-btn" onclick="fillQuestion('Что делали по флотации медно-никелевых концентратов и какой был эффект?')">
+                Флотация медно-никелевых концентратов
+              </button>
+              <button class="example-btn" onclick="fillQuestion('Какое оборудование используется для выщелачивания никеля?')">
+                Оборудование для выщелачивания
+              </button>
+              <button class="example-btn" onclick="fillQuestion('Какие противоречия есть в данных по извлечению платиноидов?')">
+                Противоречия по платиноидам
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="chat-input-area">
+          <textarea id="qa-input" class="chat-input" placeholder="Введите вопрос... (Enter для отправки, Shift+Enter для переноса)" rows="2" onkeydown="handleQAKeydown(event)"></textarea>
+          <button class="send-btn" onclick="sendQuestion()" id="send-btn">
+            <span>▶</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Analytics Panel -->
+      <div class="panel" id="panel-analytics">
+        <h2 class="panel-title">Аналитика базы знаний</h2>
+        <div class="analytics-grid">
+          <div class="analytics-card">
+            <div class="analytics-card-header">
+              <span class="analytics-icon">⚡</span>
+              <span class="analytics-card-title">Противоречия</span>
+            </div>
+            <div id="contradictions-list" class="analytics-content">
+              <div class="loading-text">Загрузка...</div>
+            </div>
+          </div>
+          <div class="analytics-card">
+            <div class="analytics-card-header">
+              <span class="analytics-icon">🔍</span>
+              <span class="analytics-card-title">Пробелы в данных</span>
+            </div>
+            <div id="gaps-list" class="analytics-content">
+              <div class="loading-text">Загрузка...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upload Panel -->
+      <div class="panel" id="panel-upload">
+        <h2 class="panel-title">Расширение базы знаний</h2>
+        <p class="panel-desc">Загрузите новый документ (PDF, TXT, MD) — система автоматически извлечёт сущности и добавит их в граф.</p>
+        <div class="upload-options" style="margin-bottom: 15px; text-align: center;">
+          <label class="vision-toggle" style="cursor: pointer; padding: 10px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; display: inline-block;">
+            <input type="checkbox" id="use-vision-toggle" style="margin-right: 8px; accent-color: var(--accent);" />
+            <span>👁️ Использовать Vision (Qwen2.5-VL-72B) для сложных картинок и таблиц PDF (долго)</span>
+          </label>
+        </div>
+
+        <div class="upload-zone" id="upload-zone" ondrop="handleDrop(event)" ondragover="handleDragover(event)" ondragleave="handleDragleave(event)">
+          <div class="upload-icon">📁</div>
+          <div class="upload-text">Перетащите файл сюда</div>
+          <div class="upload-subtext">или</div>
+          <label class="upload-btn" for="file-input">Выбрать файл</label>
+          <input type="file" id="file-input" accept=".pdf,.txt,.md" style="display:none" onchange="handleFileSelect(event)" multiple />
+          <div class="upload-formats">PDF • TXT • MD</div>
+        </div>
+
+        <div id="upload-status" style="display:none" class="upload-status-container">
+          <div class="upload-progress">
+            <div class="progress-bar" id="progress-bar"></div>
+          </div>
+          <div id="upload-status-text" class="upload-status-text"></div>
+          <div id="upload-result" class="upload-result"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/app.js?v=10"></script>
+</body>
+</html>

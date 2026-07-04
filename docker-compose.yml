@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  norngraph:
+    build: .
+    container_name: norngraph_app
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    restart: unless-stopped

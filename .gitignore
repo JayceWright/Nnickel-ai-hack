@@ -1,0 +1,41 @@
+# Конфиденциальные файлы с ключами
+.env
+
+# Исключенные папки проекта
+notes/
+NornGraph_Backup/
+base_sources/
+
+# Временные файлы и логи
+*.log
+scratch/
+.system_generated/
+
+# Кэш Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Виртуальные окружения
+venv/
+.venv/
+env/
+ENV/
+
+# Настройки IDE
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Данные и документы
+*.pdf
+*.md
+!README.md
+data/docs/*
+!data/docs/test_*.txt
