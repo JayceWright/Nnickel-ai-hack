@@ -674,15 +674,28 @@ def resolve_yandex_disk_url(url: str):
             r = requests.get(api_url, timeout=10, headers=headers)
             if r.status_code == 200:
                 data = r.json()
+                if data.get("type") == "dir":
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Указанная ссылка ведет на папку (директорию). Пожалуйста, укажите ссылку на конкретный файл (например, внутри папки кликните 'Поделиться' именно на нужном файле)."
+                    )
+                
                 download_url = data.get("file")
                 filename = data.get("name", "document.pdf")
                 if download_url:
                     return download_url, filename
+            else:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Не удалось получить файл через Yandex API: HTTP {r.status_code}. Убедитесь, что ссылка является публичной ссылкой на файл."
+                )
+        except HTTPException:
+            raise
         except Exception as e:
             print(f"⚠️ Ошибка при обращении к Yandex.Disk API: {e}")
-            raise HTTPException(status_code=400, detail=f"Ошибка Yandex.Disk API: {e}")
+            raise HTTPException(status_code=400, detail=f"Ошибка Yandex.Disk API при резолве ссылки: {str(e)}")
 
-        raise HTTPException(status_code=400, detail="Не удалось получить ссылку для скачивания с Яндекс.Диска. Убедитесь, что ссылка публичная.")
+        raise HTTPException(status_code=400, detail="Не удалось получить прямую ссылку для скачивания с Яндекс.Диска. Убедитесь, что это файл, а не папка, и ссылка публична.")
     
     # Для прямых ссылок
     parsed = urllib.parse.urlparse(url)
