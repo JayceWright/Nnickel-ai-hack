@@ -121,37 +121,89 @@ function truncate(str, max) {
 }
 
 // ─── Search Nodes ─────────────────────────────────────────────────────────────
+let _searchDataset = null; // хранит ссылку на dataset для поиска
+
 function searchNodes() {
   const query = document.getElementById('node-search').value.toLowerCase().trim();
-  if (!query || !network) {
-    if (network) network.unselectAll();
+  const searchInput = document.getElementById('node-search');
+
+  if (!network || !_searchDataset) {
     return;
   }
-  
-  const foundIds = allNodes
-    .filter(n => n.label.toLowerCase().includes(query) || (n.title && n.title.toLowerCase().includes(query)))
-    .map(n => n.id);
-    
-  if (foundIds.length > 0) {
-    network.selectNodes(foundIds);
-  } else {
+
+  if (!query) {
+    // Снимаем всё выделение — восстанавливаем граф
+    resetHighlight(_searchDataset);
     network.unselectAll();
+    searchInput.style.borderColor = '';
+    searchInput.style.boxShadow = '';
+    return;
+  }
+
+  const foundIds = allNodes
+    .filter(n => (n.label && n.label.toLowerCase().includes(query)) || (n.title && n.title.toLowerCase().includes(query)))
+    .map(n => n.id);
+
+  if (foundIds.length > 0) {
+    const foundSet = new Set(foundIds);
+
+    // Диммируем не найденные, подсвечиваем найденные неоновым белым
+    const nodeUpdates = _searchDataset.nodes.get().map(node => {
+      if (foundSet.has(node.id)) {
+        return {
+          id: node.id,
+          color: { opacity: 1, border: '#00ffff', background: 'rgba(0, 229, 255, 0.25)' },
+          borderWidth: 3,
+          font: { color: '#ffffff', strokeWidth: 4, strokeColor: 'rgba(0, 20, 40, 0.9)' },
+          shadow: { enabled: true, color: 'rgba(0, 229, 255, 0.8)', size: 20, x: 0, y: 0 }
+        };
+      } else {
+        return {
+          id: node.id,
+          color: { opacity: 0.06 },
+          borderWidth: 1,
+          font: { color: 'rgba(255,255,255,0.04)' },
+          shadow: false
+        };
+      }
+    });
+    _searchDataset.nodes.update(nodeUpdates);
+
+    // Диммируем все рёбра
+    const edgeUpdates = _searchDataset.edges.get().map(edge => ({
+      id: edge.id,
+      color: { opacity: 0.04 },
+      font: { color: 'rgba(0,0,0,0)' }
+    }));
+    _searchDataset.edges.update(edgeUpdates);
+
+    network.selectNodes(foundIds);
+    searchInput.style.borderColor = 'var(--green)';
+    searchInput.style.boxShadow = '0 0 10px rgba(0, 255, 157, 0.5)';
+  } else {
+    // Ничего не найдено — красная граница
+    resetHighlight(_searchDataset);
+    network.unselectAll();
+    searchInput.style.borderColor = 'var(--red)';
+    searchInput.style.boxShadow = '0 0 10px rgba(255, 42, 95, 0.4)';
   }
 }
 
 function focusSearchedNodes() {
   const query = document.getElementById('node-search').value.toLowerCase().trim();
   if (!query || !network) return;
-  
+
   const foundIds = allNodes
-    .filter(n => n.label.toLowerCase().includes(query) || (n.title && n.title.toLowerCase().includes(query)))
+    .filter(n => (n.label && n.label.toLowerCase().includes(query)) || (n.title && n.title.toLowerCase().includes(query)))
     .map(n => n.id);
-    
+
   if (foundIds.length > 0) {
     switchPanel('graph');
-    network.fit({ nodes: foundIds, animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+    network.fit({ nodes: foundIds, animation: { duration: 600, easingFunction: 'easeInOutQuad' } });
   }
 }
+
+
 
 function renderGraph(nodes, edges) {
   const container = document.getElementById('graph-container');
@@ -159,6 +211,7 @@ function renderGraph(nodes, edges) {
     nodes: new vis.DataSet(nodes),
     edges: new vis.DataSet(edges)
   };
+  _searchDataset = dataset; // делаем доступным для поиска
 
   const options = {
     physics: {
