@@ -7,6 +7,8 @@ import os
 import re
 import json
 import asyncio
+import urllib.parse
+import requests
 from pathlib import Path
 from typing import Optional
 
@@ -66,6 +68,11 @@ async def verify_api_key(api_key: str = Security(API_KEY_HEADER)):
 class QueryRequest(BaseModel):
     question: str
     max_hops: int = 2
+
+
+class UrlUploadRequest(BaseModel):
+    url: str
+    use_vision: bool = False
 
 
 class UploadStatus:
@@ -393,6 +400,66 @@ async def upload_document(background_tasks: BackgroundTasks, file: UploadFile = 
     background_tasks.add_task(process_document_background, job_id, str(file_path), file.filename, use_vision)
 
     return {"job_id": job_id, "status": "processing", "filename": file.filename}
+
+
+def resolve_yandex_disk_url(url: str):
+    """Преобразует ссылку Яндекс.Диска или прямую ссылку в скачиваемый URL и имя файла."""
+    if "yadi.sk" in url or "disk.yandex.ru" in url:
+        api_url = f"https://cloud-api.yandex.net/v1/disk/public/resources?public_key={urllib.parse.quote(url)}"
+        try:
+            r = requests.get(api_url, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                download_url = data.get("file")
+                filename = data.get("name", "document.pdf")
+                if download_url:
+                    return download_url, filename
+        except Exception as e:
+            print(f"⚠️ Ошибка при обращении к Yandex.Disk API: {e}")
+            raise HTTPException(status_code=400, detail=f"Ошибка Yandex.Disk API: {e}")
+
+        raise HTTPException(status_code=400, detail="Не удалось получить ссылку для скачивания с Яндекс.Диска. Убедитесь, что ссылка публичная.")
+    
+    # Для прямых ссылок
+    parsed = urllib.parse.urlparse(url)
+    filename = urllib.parse.unquote(os.path.basename(parsed.path)) or "downloaded_file"
+    if not os.path.splitext(filename)[1]:
+        filename += ".pdf"
+    return url, filename
+
+
+@app.post("/api/upload_url")
+async def upload_by_url(request: UrlUploadRequest, background_tasks: BackgroundTasks):
+    """Загружает документ по ссылке (прямой или Яндекс.Диск) и асинхронно расширяет граф."""
+    import uuid
+    job_id = str(uuid.uuid4())[:8]
+
+    target_url, filename = resolve_yandex_disk_url(request.url)
+
+    # Скачиваем файл
+    try:
+        r = requests.get(target_url, timeout=30, stream=True)
+        if r.status_code != 200:
+            raise HTTPException(status_code=400, detail=f"Ошибка скачивания файла: HTTP {r.status_code}")
+        
+        # Сохраняем физически
+        docs_dir = Path(__file__).parent / "data" / "docs"
+        docs_dir.mkdir(parents=True, exist_ok=True)
+        file_path = docs_dir / filename
+        
+        with open(file_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Ошибка скачивания файла: {str(e)}")
+
+    UploadStatus.set(job_id, {"status": "processing", "filename": filename})
+
+    # Запускаем обработку в фоне
+    background_tasks.add_task(process_document_background, job_id, str(file_path), filename, request.use_vision)
+
+    return {"job_id": job_id, "status": "processing", "filename": filename}
 
 
 def parse_pdf_with_vlm(file_path: str) -> str:

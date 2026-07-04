@@ -559,3 +559,62 @@ async function pollUploadStatus(jobId, progressBar, statusText, resultDiv) {
   }
   throw new Error('Таймаут обработки');
 }
+
+async function uploadByUrl() {
+  const urlInput = document.getElementById('url-input');
+  const url = urlInput.value.trim();
+  if (!url) {
+    alert('Пожалуйста, введите корректную ссылку.');
+    return;
+  }
+
+  const statusDiv  = document.getElementById('upload-status');
+  const statusText = document.getElementById('upload-status-text');
+  const progressBar = document.getElementById('progress-bar');
+  const resultDiv  = document.getElementById('upload-result');
+
+  statusDiv.style.display = 'block';
+  resultDiv.innerHTML = '';
+  statusText.textContent = `⬇ Скачивание файла по ссылке...`;
+  progressBar.style.width = '10%';
+  progressBar.style.background = 'linear-gradient(90deg, var(--accent), var(--green))';
+
+  const useVision = document.getElementById('use-vision-toggle')?.checked || false;
+
+  try {
+    const res = await fetch(`${API}/api/upload_url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url, use_vision: useVision })
+    });
+    if (!res.ok) throw new Error((await res.json()).detail);
+
+    const { job_id, filename } = await res.json();
+    progressBar.style.width = '30%';
+    statusText.textContent = `🔍 Извлечение сущностей для ${filename}...`;
+
+    const status = await pollUploadStatus(job_id, progressBar, statusText, resultDiv);
+
+    statusText.textContent = `✅ Успешно обработано: ${filename}`;
+    progressBar.style.width = '100%';
+    urlInput.value = ''; // очищаем инпут после успеха
+
+    await loadGraph();
+    await loadStats();
+
+    if (status && status.new_nodes && status.new_nodes.length > 0) {
+      const newIds = status.new_nodes.map(n => n.id);
+      switchPanel('graph');
+      setTimeout(() => {
+        network.selectNodes(newIds);
+        network.fit({
+          nodes: newIds,
+          animation: { duration: 1000, easingFunction: 'easeInOutQuad' }
+        });
+      }, 500);
+    }
+  } catch (e) {
+    statusText.textContent = `❌ Ошибка при загрузке по ссылке: ${e.message}`;
+    progressBar.style.background = '#ef4444';
+  }
+}

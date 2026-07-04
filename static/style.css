@@ -648,6 +648,63 @@ html, body {
   line-height: 1.8;
 }
 
+/* URL upload */
+.upload-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin: 20px 0;
+}
+.upload-divider::before,
+.upload-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.upload-divider:not(:empty)::before {
+  margin-right: 15px;
+}
+.upload-divider:not(:empty)::after {
+  margin-left: 15px;
+}
+
+.url-upload-container {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.url-input {
+  flex: 1;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.url-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.url-upload-btn {
+  white-space: nowrap;
+  font-weight: 600;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.url-upload-btn:hover {
+  background: var(--accent-glow);
+}
+
 .result-node {
   display: inline-block;
   padding: 2px 8px;

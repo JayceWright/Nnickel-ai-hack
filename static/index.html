@@ -177,6 +177,13 @@
           <div class="upload-formats">PDF • TXT • MD</div>
         </div>
 
+        <div class="upload-divider">или загрузите по ссылке</div>
+
+        <div class="url-upload-container">
+          <input type="url" id="url-input" class="url-input" placeholder="Вставьте ссылку на Яндекс.Диск или файл..." />
+          <button class="tool-btn url-upload-btn" onclick="uploadByUrl()">Загрузить</button>
+        </div>
+
         <div id="upload-status" style="display:none" class="upload-status-container">
           <div class="upload-progress">
             <div class="progress-bar" id="progress-bar"></div>
