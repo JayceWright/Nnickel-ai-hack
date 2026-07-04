@@ -153,6 +153,7 @@ def extract_entities_with_llm(text: str) -> dict:
 3. Противоречия в данных: если в тексте утверждается, что какой-то метод или параметр не работает, опровергает предыдущие данные или снижает показатели по сравнению с другими исследованиями (слова "однако", "в отличие от", "опровергает", "падает до"), обязательно создай связь CONTRADICTS между конфликтующими узлами. В свойствах связи укажи reason.
 4. Эксперты, авторы и публикации: связывай авторов с их публикациями (authored_by) и организациями (affiliated_with).
 5. ЦИТИРОВАНИЕ: Для КАЖДОГО узла постарайся найти точный номер страницы (где он был упомянут) и короткую цитату (до 100 символов), подтверждающую этот факт.
+6. ЕСЛИ В ТЕКСТЕ НЕТ ЭКСПЕРИМЕНТАЛЬНЫХ ДАННЫХ (например, это оглавление курса или общий доклад), ВСЕ РАВНО извлекай упоминаемые концепты (как Process или Material) и людей (как Expert). Граф никогда не должен быть пустым, если в тексте есть осмысленная информация.
 
 Верни JSON строго следующей структуры:
 {{
@@ -177,6 +178,8 @@ def extract_entities_with_llm(text: str) -> dict:
     )
 
     raw = response.choices[0].message.content
+    with open("llm_debug_output.txt", "w", encoding="utf-8") as f:
+        f.write(raw)
     json_match = re.search(r'\{[\s\S]*\}', raw)
     if not json_match:
         return {"nodes": [], "edges": []}
@@ -407,7 +410,8 @@ def resolve_yandex_disk_url(url: str):
     if "yadi.sk" in url or "disk.yandex.ru" in url:
         api_url = f"https://cloud-api.yandex.net/v1/disk/public/resources?public_key={urllib.parse.quote(url)}"
         try:
-            r = requests.get(api_url, timeout=10)
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+            r = requests.get(api_url, timeout=10, headers=headers)
             if r.status_code == 200:
                 data = r.json()
                 download_url = data.get("file")
@@ -438,7 +442,10 @@ async def upload_by_url(request: UrlUploadRequest, background_tasks: BackgroundT
 
     # Скачиваем файл
     try:
-        r = requests.get(target_url, timeout=30, stream=True)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        r = requests.get(target_url, timeout=30, stream=True, headers=headers)
         if r.status_code != 200:
             raise HTTPException(status_code=400, detail=f"Ошибка скачивания файла: HTTP {r.status_code}")
         
@@ -559,6 +566,8 @@ async def process_document_background(job_id: str, file_path: str, filename: str
             raise ValueError("Файл пуст или текст не распознан")
 
         print(f"🧠 [Job: {job_id}] Отправка в LLM для извлечения графа (размер текста: {len(text)} симв.)...")
+        with open("pdf_text_debug.txt", "w", encoding="utf-8") as f:
+            f.write(text)
         # 2. Извлекаем онтологию
         graph_data = extract_entities_with_llm(text)
         
