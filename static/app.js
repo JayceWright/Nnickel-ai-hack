@@ -72,7 +72,7 @@ async function loadGraph() {
       title: n.title || n.label,
       group: n.group,
       color: NODE_COLORS[n.group] || DEFAULT_COLOR,
-      font: { color: '#e2e8f0', size: 11, face: 'Inter' },
+      font: { color: '#ffffff', size: 12, face: 'Inter', strokeWidth: 3, strokeColor: 'rgba(5, 8, 18, 0.8)' },
       size: getNodeSize(n.group),
       borderWidth: 1.5,
       shape: getNodeShape(n.group),
@@ -86,10 +86,10 @@ async function loadGraph() {
         to: e.to,
         label: e.label,
         title: e.title || e.label,
-        color: isContradict ? { color: '#ff2a5f', highlight: '#ff8a9f' } : { color: 'rgba(255, 255, 255, 0.15)', highlight: '#00e5ff' },
+        color: isContradict ? { color: '#ff2a5f', highlight: '#ff8a9f', opacity: 0.8 } : { color: 'rgba(255, 255, 255, 0.15)', highlight: '#00e5ff', opacity: 0.8 },
         dashes: isContradict ? [5, 5] : false,
         arrows: 'to',
-        font: { color: isContradict ? '#ff8a9f' : '#94a3b8', size: 9, align: 'middle', strokeWidth: 0 },
+        font: { color: isContradict ? '#ff8a9f' : '#94a3b8', size: 10, align: 'top', strokeWidth: 3, strokeColor: 'rgba(5, 8, 18, 0.8)' },
         width: isContradict ? 2 : 1,
         shadow: isContradict ? { enabled: true, color: 'rgba(255, 42, 95, 0.5)', size: 10, x: 0, y: 0 } : false
       };
@@ -164,17 +164,19 @@ function renderGraph(nodes, edges) {
     physics: {
       enabled: physicsEnabled,
       solver: 'barnesHut',
-      barnesHut: { gravitationalConstant: -2000, centralGravity: 0.3, springLength: 95, springConstant: 0.04, damping: 0.09 },
-      stabilization: false
+      barnesHut: { gravitationalConstant: -2500, centralGravity: 0.15, springLength: 130, springConstant: 0.03, damping: 0.12 },
+      stabilization: { iterations: 150 }
     },
     interaction: {
       hover: true,
       tooltipDelay: 200,
       navigationButtons: false,
       zoomView: true,
+      selectConnectedEdges: true,
     },
     edges: {
       smooth: { type: 'continuous', roundness: 0.2 },
+      selectionWidth: 2,
     },
     nodes: {
       scaling: { min: 8, max: 25 }
@@ -185,24 +187,70 @@ function renderGraph(nodes, edges) {
   if (network) network.destroy();
   network = new vis.Network(container, dataset, options);
 
-  // Клик по узлу → показываем детали
+  // Клик по узлу → показываем детали и диммируем остальные
   network.on('click', params => {
     if (params.nodes.length > 0) {
       const nodeId = params.nodes[0];
       const node = nodes.find(n => n.id === nodeId);
       if (node) showNodeDetail(node);
+      highlightNodes(params.nodes, dataset);
     } else {
       hideNodeDetail();
+      resetHighlight(dataset);
     }
   });
 
   // Подсветка новых узлов (если есть)
   network.on('stabilizationIterationsDone', () => {
-    network.setOptions({ physics: { enabled: false } });
-    physicsEnabled = false;
-    network.fit();
+    if (physicsEnabled) {
+      network.setOptions({ physics: { enabled: false } });
+      physicsEnabled = false;
+      network.fit();
+    }
   });
 
+}
+
+function highlightNodes(selectedNodeIds, dataset) {
+  const selectedNodeId = selectedNodeIds[0];
+  const connectedNodes = network.getConnectedNodes(selectedNodeId);
+  const connectedEdges = network.getConnectedEdges(selectedNodeId);
+  
+  const allNodesUpdate = dataset.nodes.get().map(node => {
+    if (node.id === selectedNodeId || connectedNodes.includes(node.id)) {
+      return { id: node.id, color: { opacity: 1 }, font: { color: '#ffffff' } };
+    } else {
+      return { id: node.id, color: { opacity: 0.1 }, font: { color: 'rgba(255,255,255,0.1)' } };
+    }
+  });
+
+  const allEdgesUpdate = dataset.edges.get().map(edge => {
+    if (connectedEdges.includes(edge.id)) {
+      return { id: edge.id, color: { opacity: 1 }, font: { color: edge.font ? edge.font.color : '#94a3b8' } };
+    } else {
+      return { id: edge.id, color: { opacity: 0.05 }, font: { color: 'rgba(255,255,255,0)' } };
+    }
+  });
+
+  dataset.nodes.update(allNodesUpdate);
+  dataset.edges.update(allEdgesUpdate);
+}
+
+function resetHighlight(dataset) {
+  const allNodesUpdate = dataset.nodes.get().map(node => ({
+    id: node.id, 
+    color: { opacity: 1 },
+    font: { color: '#ffffff' }
+  }));
+  
+  const allEdgesUpdate = dataset.edges.get().map(edge => ({
+    id: edge.id, 
+    color: { opacity: 0.8 },
+    font: { color: edge.label === 'contradicts' ? '#ff8a9f' : '#94a3b8' }
+  }));
+
+  dataset.nodes.update(allNodesUpdate);
+  dataset.edges.update(allEdgesUpdate);
 }
 
 function showNodeDetail(node) {
