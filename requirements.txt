@@ -1,12 +1,10 @@
 fastapi
 uvicorn[standard]
+python-multipart
 pydantic
 openai
 neo4j
 python-dotenv
-PyPDF2
+python-docx
 pymupdf
 pymupdf4llm
-easyocr
-ftfy
-json-repair
