@@ -509,6 +509,19 @@ async function sendQuestion() {
       } else {
         bubble.textContent = data.answer;
       }
+
+      // Добавляем кнопку Копировать под новосозданным сообщением
+      const wrapper = loading.querySelector('.chat-bubble-wrapper');
+      if (wrapper) {
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'copy-msg-btn';
+        copyBtn.textContent = '📋 Копировать';
+        copyBtn.setAttribute('data-text', encodeURIComponent(data.answer));
+        copyBtn.onclick = function() { copyMessageText(this); };
+        copyBtn.style.cssText = 'align-self:flex-start; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:rgba(255,255,255,0.5); font-size:11px; cursor:pointer; padding:3px 8px; border-radius:4px; transition:all 0.2s; margin-top:4px;';
+        wrapper.appendChild(copyBtn);
+      }
+
       chatHistory.push({ text: data.answer, role: 'assistant' });
       saveChatHistory();
       document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
@@ -525,6 +538,38 @@ async function sendQuestion() {
 
   btn.disabled = false;
   input.focus();
+}
+
+async function copyMessageText(btn) {
+  const rawText = decodeURIComponent(btn.getAttribute('data-text'));
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(rawText);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = rawText;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    const orig = btn.textContent;
+    btn.textContent = '✅ Скопировано!';
+    btn.style.color = '#34d399';
+    btn.style.borderColor = 'rgba(52, 211, 153, 0.4)';
+    btn.style.background = 'rgba(52, 211, 153, 0.1)';
+    setTimeout(() => {
+      btn.textContent = orig;
+      btn.style.color = '';
+      btn.style.borderColor = '';
+      btn.style.background = '';
+    }, 2000);
+  } catch (err) {
+    console.error('Copy error:', err);
+    alert('Не удалось скопировать. Пожалуйста, скопируйте текст вручную.');
+  }
 }
 
 function addChatMessage(text, role, id = null, isLoading = false, save = true) {
@@ -544,7 +589,12 @@ function addChatMessage(text, role, id = null, isLoading = false, save = true) {
 
   div.innerHTML = `
     <div class="chat-avatar">${emoji}</div>
-    <div class="chat-bubble ${isLoading ? 'loading' : ''}">${contentHtml}</div>
+    <div class="chat-bubble-wrapper">
+      <div class="chat-bubble ${isLoading ? 'loading' : ''}">${contentHtml}</div>
+      ${(!isLoading && role === 'assistant' && text) ? `
+        <button class="copy-msg-btn" onclick="copyMessageText(this)" data-text="${encodeURIComponent(text)}" style="align-self:flex-start; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:rgba(255,255,255,0.5); font-size:11px; cursor:pointer; padding:3px 8px; border-radius:4px; transition:all 0.2s; margin-top:4px;">📋 Копировать</button>
+      ` : ''}
+    </div>
   `;
 
   container.appendChild(div);

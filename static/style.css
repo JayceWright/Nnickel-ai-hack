@@ -425,8 +425,21 @@ html, body {
 .chat-message.user .chat-avatar     { background: var(--accent); }
 .chat-message.assistant .chat-avatar { background: var(--bg-elevated); border: 1px solid var(--border-light); }
 
-.chat-bubble {
+.chat-bubble-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   max-width: 75%;
+}
+.chat-message.user .chat-bubble-wrapper {
+  align-items: flex-end;
+}
+.chat-message.assistant .chat-bubble-wrapper {
+  align-items: flex-start;
+}
+
+.chat-bubble {
+  width: 100%;
   padding: 14px 18px;
   border-radius: var(--radius-md);
   font-size: 13.5px;
@@ -448,6 +461,12 @@ html, body {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   color: #e2e8f0;
 }
+
+.copy-msg-btn:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+}
+
 
 .chat-bubble.loading::after {
   content: '';
