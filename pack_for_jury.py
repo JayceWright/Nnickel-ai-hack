@@ -20,7 +20,7 @@ def pack_project():
             dirs[:] = [d for d in dirs if d not in exclude_dirs]
             
             for file in files:
-                if file in exclude_files:
+                if file.endswith('.zip') or file in exclude_files:
                     continue
                 
                 file_path = os.path.join(root, file)

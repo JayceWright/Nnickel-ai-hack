@@ -892,6 +892,11 @@ async function uploadFiles(files) {
   statusText.textContent = `✅ Успешно обработано файлов: ${files.length}`;
   progressBar.style.width = '100%';
   
+  if (allNewNodes.length > 0) {
+    const newIds = allNewNodes.map(n => n.id);
+    nodesToFocusAfterStabilization = newIds;
+  }
+
   await loadGraph();
   await loadStats();
 
@@ -906,8 +911,6 @@ async function uploadFiles(files) {
   `;
 
   if (allNewNodes.length > 0) {
-    const newIds = allNewNodes.map(n => n.id);
-    nodesToFocusAfterStabilization = newIds;
     switchPanel('graph');
   }
 }
@@ -981,12 +984,15 @@ async function uploadByUrl() {
     progressBar.style.width = '100%';
     urlInput.value = ''; // очищаем инпут после успеха
 
+    if (status && status.new_nodes && status.new_nodes.length > 0) {
+      const newIds = status.new_nodes.map(n => n.id);
+      nodesToFocusAfterStabilization = newIds;
+    }
+
     await loadGraph();
     await loadStats();
 
     if (status && status.new_nodes && status.new_nodes.length > 0) {
-      const newIds = status.new_nodes.map(n => n.id);
-      nodesToFocusAfterStabilization = newIds;
       switchPanel('graph');
     }
   } catch (e) {
